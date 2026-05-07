@@ -1,0 +1,217 @@
+:root {
+  --bg: #141418;
+  --panel: #1c1c22;
+  --border: #2a2a33;
+  --fg: #e6e6ea;
+  --muted: #8a8a94;
+  --accent: #ff7a00;
+  --accent-dim: #4a2e14;
+  --danger: #ff4b5c;
+  --ok: #4caf50;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+#app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+h1 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  margin: 0 0 16px;
+  color: var(--accent);
+}
+
+.bar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.bar label { font-size: 13px; color: var(--muted); }
+.bar select {
+  margin-left: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font: inherit;
+}
+
+button {
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover { border-color: var(--accent); }
+button.panic { color: var(--danger); border-color: var(--danger); }
+
+#enable {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.sustain-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.sustain-dot.on { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+th, td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  font-weight: 500;
+  color: var(--muted);
+  background: #171720;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+tr:last-child td { border-bottom: none; }
+tr.disabled td { color: var(--muted); }
+
+.poly-group {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px;
+}
+.poly-group button {
+  padding: 2px 10px;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  border-radius: 3px;
+}
+.poly-group button.selected {
+  background: var(--accent);
+  color: #000;
+  font-weight: 600;
+}
+
+.voice-leds {
+  display: inline-flex;
+  gap: 4px;
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 1;
+}
+.led {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  display: inline-block;
+}
+.led.on { background: var(--accent); box-shadow: 0 0 4px var(--accent); }
+.led.hidden { visibility: hidden; }
+
+.status-line {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 1em;
+}
+
+.error {
+  color: var(--danger);
+  background: #2a1a1c;
+  border: 1px solid var(--danger);
+  padding: 10px 14px;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.midi-log-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 6px;
+}
+.midi-log-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+.log-clear {
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.midi-log-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.midi-log-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.midi-log-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  padding: 6px 10px;
+  background: #171720;
+  border-bottom: 1px solid var(--border);
+}
+.midi-log {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fg);
+  height: 280px;
+  overflow-y: auto;
+  white-space: pre;
+  word-break: keep-all;
+}
