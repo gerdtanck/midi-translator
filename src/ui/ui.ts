@@ -46,6 +46,7 @@ export function mountUi(root: HTMLElement): void {
             <th>Trigger</th>
             <th>Group</th>
             <th title="Keep released slots at their last pitch instead of resetting to unison">Latch</th>
+            <th title="Retrigger the MD trigger note on every new key press">Retrig</th>
             <th>Voices</th>
           </tr>
         </thead>
@@ -117,11 +118,13 @@ export function mountUi(root: HTMLElement): void {
     const existing = engines.get(trackId)
     if (existing && existing.allocator.polyphony === poly) {
       existing.latch = cfg.latch
+      existing.retrigger = cfg.retrigger
       return existing
     }
     existing?.forceRelease()
     const e = new TrackEngine(trackId, poly, io)
     e.latch = cfg.latch
+    e.retrigger = cfg.retrigger
     engines.set(trackId, e)
     return e
   }
@@ -257,6 +260,14 @@ export function mountUi(root: HTMLElement): void {
           c.latch = latch
           const e = engines.get(trackId)
           if (e) e.latch = latch
+          persist()
+          renderRow(trackId)
+        },
+        onToggleRetrigger: (trackId, retrigger) => {
+          const c = settings.tracks[trackId]!
+          c.retrigger = retrigger
+          const e = engines.get(trackId)
+          if (e) e.retrigger = retrigger
           persist()
           renderRow(trackId)
         },

@@ -36,6 +36,7 @@ export function loadSettings(): PersistedSettings {
             enabled: Boolean(p.enabled),
             polyphony: poly,
             latch: Boolean(p.latch),
+            retrigger: Boolean(p.retrigger),
           }
         })
       : base.tracks

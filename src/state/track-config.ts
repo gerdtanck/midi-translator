@@ -6,6 +6,8 @@ export interface TrackConfig {
   polyphony: Polyphony
   // When true, released voice slots keep their last CC value instead of resetting to unison.
   latch: boolean
+  // When true, every new key press retriggers the MD trigger note (NoteOff + NoteOn).
+  retrigger: boolean
 }
 
 export const defaultTrackConfigs = (): TrackConfig[] =>
@@ -14,6 +16,7 @@ export const defaultTrackConfigs = (): TrackConfig[] =>
     enabled: false,
     polyphony: 1,
     latch: false,
+    retrigger: false,
   }))
 
 export const POLYPHONY_CHOICES: readonly Polyphony[] = [1, 3, 4]

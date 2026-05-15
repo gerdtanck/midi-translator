@@ -16,6 +16,7 @@ export interface TrackRowCallbacks {
   onToggleEnabled: (trackId: number, enabled: boolean) => void
   onChangePolyphony: (trackId: number, poly: Polyphony) => void
   onToggleLatch: (trackId: number, latch: boolean) => void
+  onToggleRetrigger: (trackId: number, retrigger: boolean) => void
 }
 
 export function createTrackRow(
@@ -69,6 +70,17 @@ export function createTrackRow(
   )
   tdLatch.appendChild(latchCb)
 
+  const tdRetrigger = document.createElement('td')
+  const retrigCb = document.createElement('input')
+  retrigCb.type = 'checkbox'
+  retrigCb.className = 'retrig-cb'
+  retrigCb.checked = config.retrigger
+  retrigCb.title = 'Retrigger the MD trigger note on every new key press'
+  retrigCb.addEventListener('change', () =>
+    callbacks.onToggleRetrigger(config.trackId, retrigCb.checked)
+  )
+  tdRetrigger.appendChild(retrigCb)
+
   const tdLeds = document.createElement('td')
   const leds = document.createElement('span')
   leds.className = 'voice-leds'
@@ -85,6 +97,7 @@ export function createTrackRow(
   tr.appendChild(tdTrigger)
   tr.appendChild(tdGroup)
   tr.appendChild(tdLatch)
+  tr.appendChild(tdRetrigger)
   tr.appendChild(tdLeds)
 
   updateTrackRow(tr, config, undefined)
@@ -98,11 +111,16 @@ export function updateTrackRow(
 ): void {
   tr.classList.toggle('disabled', !config.enabled)
 
-  const cb = tr.querySelector<HTMLInputElement>('input[type="checkbox"]:not(.latch-cb)')!
+  const cb = tr.querySelector<HTMLInputElement>(
+    'input[type="checkbox"]:not(.latch-cb):not(.retrig-cb)'
+  )!
   if (cb.checked !== config.enabled) cb.checked = config.enabled
 
   const latchCb = tr.querySelector<HTMLInputElement>('input.latch-cb')!
   if (latchCb.checked !== config.latch) latchCb.checked = config.latch
+
+  const retrigCb = tr.querySelector<HTMLInputElement>('input.retrig-cb')!
+  if (retrigCb.checked !== config.retrigger) retrigCb.checked = config.retrigger
 
   const polyButtons = tr.querySelectorAll<HTMLButtonElement>('.poly-group button')
   for (const b of polyButtons) {

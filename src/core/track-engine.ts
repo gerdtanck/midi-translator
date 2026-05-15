@@ -19,6 +19,8 @@ export class TrackEngine {
   readonly allocator: VoiceAllocator
   // When true, released voice slots keep their last-sent CC value instead of being reset to unison.
   latch = false
+  // When true, every new key press re-fires the trigger note (NoteOff + NoteOn) so the MD voice restarts.
+  retrigger = false
   private triggerHeld = false
   private lastSentCc = new Map<number, number>()
   private readonly sink: MidiSink
@@ -67,6 +69,12 @@ export class TrackEngine {
       // Anchor may have migrated or a satellite changed — diff the CCs.
       // With latch on, freeze pitches at the last note-on snapshot: skip emit on release events.
       if (!this.latch || isNoteOn) this.emitCcs()
+      if (isNoteOn && this.retrigger) {
+        // Re-fire trigger note with the velocity of the most recent key press.
+        const newest = this.allocator.voices[this.allocator.voices.length - 1]!
+        this.sink.sendNoteOff(MD_TRIGGER_CHANNEL, this.triggerNote)
+        this.sink.sendNoteOn(MD_TRIGGER_CHANNEL, this.triggerNote, newest.vel)
+      }
     }
   }
 
