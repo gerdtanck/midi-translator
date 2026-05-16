@@ -2,7 +2,6 @@ import { MidiIO, type MidiPortInfo } from '../midi/midi-io'
 import {
   CC_ALL_NOTES_OFF,
   MD_TRIGGER_CHANNEL,
-  RT_CLOCK,
   isRealtimeByte,
 } from '../midi/midi-constants'
 import { TRIGGER_NOTES } from '../midi/md-tables'
@@ -32,8 +31,6 @@ export function mountUi(root: HTMLElement): void {
         <label>Output
           <select id="output"></select>
         </label>
-        <span><span class="sustain-dot" id="sustainDot"></span>Sustain</span>
-        <span><span class="sustain-dot" id="clockDot"></span>Clock</span>
         <button id="panic" class="panic">Panic</button>
       </div>
       <div id="deviceWarn"></div>
@@ -43,10 +40,10 @@ export function mountUi(root: HTMLElement): void {
             <th>#</th>
             <th>On</th>
             <th>Poly</th>
-            <th>Trigger</th>
-            <th>Group</th>
             <th title="Keep released slots at their last pitch instead of resetting to unison">Latch</th>
             <th title="Retrigger the MD trigger note on every new key press">Retrig</th>
+            <th title="Hold DEC at 127 while notes are held; drop to RELEASE on note-off (ADSR S+R emulation)">Sustain</th>
+            <th title="DEC value (0–127) sent when no notes are held">Release</th>
             <th>Voices</th>
           </tr>
         </thead>
@@ -76,8 +73,6 @@ export function mountUi(root: HTMLElement): void {
   const inputSel = root.querySelector<HTMLSelectElement>('#input')!
   const outputSel = root.querySelector<HTMLSelectElement>('#output')!
   const tbody = root.querySelector<HTMLTableSectionElement>('#tbody')!
-  const sustainDot = root.querySelector<HTMLSpanElement>('#sustainDot')!
-  const clockDot = root.querySelector<HTMLSpanElement>('#clockDot')!
   const panicBtn = root.querySelector<HTMLButtonElement>('#panic')!
   const deviceWarn = root.querySelector<HTMLDivElement>('#deviceWarn')!
   const log = root.querySelector<HTMLDivElement>('#log')!
@@ -119,12 +114,17 @@ export function mountUi(root: HTMLElement): void {
     if (existing && existing.allocator.polyphony === poly) {
       existing.latch = cfg.latch
       existing.retrigger = cfg.retrigger
+      existing.sustain = cfg.sustain
+      existing.release = cfg.release
       return existing
     }
     existing?.forceRelease()
     const e = new TrackEngine(trackId, poly, io)
     e.latch = cfg.latch
     e.retrigger = cfg.retrigger
+    // Assign sustain fields directly (not via setSustain) so engine creation does not emit MIDI.
+    e.sustain = cfg.sustain
+    e.release = cfg.release
     engines.set(trackId, e)
     return e
   }
@@ -199,23 +199,14 @@ export function mountUi(root: HTMLElement): void {
       bootError.innerHTML = `<div class="error">${String(err)}</div>`
       return
     }
-    let clockTimeout: number | null = null
-    const pulseClock = (): void => {
-      clockDot.classList.add('on')
-      if (clockTimeout !== null) clearTimeout(clockTimeout)
-      clockTimeout = window.setTimeout(() => clockDot.classList.remove('on'), 250)
-    }
-
     io.onMessage((bytes) => {
       logIn.push(bytes)
       // Pass realtime (clock/start/continue/stop) straight through to the MD.
       if (bytes.length >= 1 && isRealtimeByte(bytes[0]!)) {
         io.sendRealtime(bytes[0]!)
-        if (bytes[0] === RT_CLOCK) pulseClock()
         return
       }
       router.onMidiMessage(bytes)
-      sustainDot.classList.toggle('on', router.getSustain())
       renderAllRows()
     })
     io.onOutgoing((bytes) => logOut.push(bytes))
@@ -268,6 +259,22 @@ export function mountUi(root: HTMLElement): void {
           c.retrigger = retrigger
           const e = engines.get(trackId)
           if (e) e.retrigger = retrigger
+          persist()
+          renderRow(trackId)
+        },
+        onToggleSustain: (trackId, sustain) => {
+          const c = settings.tracks[trackId]!
+          c.sustain = sustain
+          // setSustain emits DEC (=127 if held, else release; on toggle-off: release).
+          engines.get(trackId)?.setSustain(sustain)
+          persist()
+          renderRow(trackId)
+        },
+        onChangeRelease: (trackId, release) => {
+          const c = settings.tracks[trackId]!
+          c.release = release
+          // setRelease emits DEC immediately if sustain on and idle; otherwise stores for next release.
+          engines.get(trackId)?.setRelease(release)
           persist()
           renderRow(trackId)
         },

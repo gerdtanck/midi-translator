@@ -115,6 +115,58 @@ describe('Router + TrackEngine integration', () => {
     expect(noteOns).toEqual([{ kind: 'noteOn', ch: 1, note: 43, vel: 100 }])
   })
 
+  it('latch on poly=3: chord rings out through the release tail (no PTCH CCs on releases)', () => {
+    const sink = new TestSink()
+    const engine = new TrackEngine(0, 3, sink)
+    engine.latch = true
+    const router = new Router(() => [engine])
+
+    router.onMidiMessage(noteOn(1, 60, 100)) // C4
+    router.onMidiMessage(noteOn(1, 64, 100)) // E4
+    router.onMidiMessage(noteOn(1, 67, 100)) // G4
+    sink.reset()
+
+    router.onMidiMessage(noteOff(1, 64))
+    router.onMidiMessage(noteOff(1, 60))
+    router.onMidiMessage(noteOff(1, 67)) // last release
+
+    // No PTCH CCs at any point during the releases — chord must remain on the device for the tail.
+    expect(sink.messages.filter((m) => m.kind === 'cc')).toEqual([])
+    expect(sink.messages.filter((m) => m.kind === 'noteOff')).toEqual([
+      { kind: 'noteOff', ch: 1, note: 36 },
+    ])
+  })
+
+  it('latch on poly=3: next first-press resets unused sub-voice slots to unison', () => {
+    const sink = new TestSink()
+    const engine = new TrackEngine(0, 3, sink)
+    engine.latch = true
+    const router = new Router(() => [engine])
+
+    // Play a chord and release it — sub-voices remain latched on the device through the tail.
+    router.onMidiMessage(noteOn(1, 60, 100))
+    router.onMidiMessage(noteOn(1, 64, 100))
+    router.onMidiMessage(noteOn(1, 67, 100))
+    router.onMidiMessage(noteOff(1, 64))
+    router.onMidiMessage(noteOff(1, 60))
+    router.onMidiMessage(noteOff(1, 67))
+    sink.reset()
+
+    // New single-note press — only slot 0 has a voice, so slots 1 and 2 must be reset to unison
+    // so the new note isn't pitched by stale latched offsets.
+    router.onMidiMessage(noteOn(1, 65, 100)) // F4
+    const ccs = sink.messages.filter((m) => m.kind === 'cc')
+    expect(ccs).toContainEqual({ kind: 'cc', ch: 1, cc: 20, value: 64 }) // PTCH2 → unison
+    expect(ccs).toContainEqual({ kind: 'cc', ch: 1, cc: 21, value: 64 }) // PTCH3 → unison
+
+    // The unison resets must precede the trigger note-on so the chord starts clean.
+    const noteOnIdx = sink.messages.findIndex((m) => m.kind === 'noteOn')
+    const ccPositions = sink.messages
+      .map((m, i) => (m.kind === 'cc' ? i : -1))
+      .filter((i) => i >= 0)
+    for (const pos of ccPositions) expect(pos).toBeLessThan(noteOnIdx)
+  })
+
   it('sustain pedal defers voice release until pedal up', () => {
     const sink = new TestSink()
     const engine = new TrackEngine(0, 1, sink)

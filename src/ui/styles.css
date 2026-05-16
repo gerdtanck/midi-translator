@@ -75,16 +75,6 @@ button.panic { color: var(--danger); border-color: var(--danger); }
   font-weight: 600;
 }
 
-.sustain-dot {
-  display: inline-block;
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: var(--border);
-  margin-right: 6px;
-  vertical-align: middle;
-}
-.sustain-dot.on { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
-
 table {
   width: 100%;
   border-collapse: collapse;
@@ -131,6 +121,18 @@ tr.disabled td { color: var(--muted); }
   color: #000;
   font-weight: 600;
 }
+
+.release-input {
+  width: 4em;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 12px;
+}
+.release-input:focus { outline: none; border-color: var(--accent); }
 
 .voice-leds {
   display: inline-flex;

@@ -2,14 +2,14 @@ import type { TrackConfig } from '../state/track-config'
 import { POLYPHONY_CHOICES } from '../state/track-config'
 import type { TrackEngine } from '../core/track-engine'
 import type { Polyphony } from '../core/voice-allocator'
-import { groupChannel, triggerNoteForTrack } from '../midi/md-tables'
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-// Scientific pitch: MIDI 60 = C4.
-const midiNoteName = (n: number): string => {
-  const octave = Math.floor(n / 12) - 1
-  const name = NOTE_NAMES[n % 12]
-  return `${name}${octave}`
+const clampReleaseInput = (raw: string, fallback: number): number => {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return fallback
+  const r = Math.round(n)
+  if (r < 0) return 0
+  if (r > 127) return 127
+  return r
 }
 
 export interface TrackRowCallbacks {
@@ -17,6 +17,8 @@ export interface TrackRowCallbacks {
   onChangePolyphony: (trackId: number, poly: Polyphony) => void
   onToggleLatch: (trackId: number, latch: boolean) => void
   onToggleRetrigger: (trackId: number, retrigger: boolean) => void
+  onToggleSustain: (trackId: number, sustain: boolean) => void
+  onChangeRelease: (trackId: number, release: number) => void
 }
 
 export function createTrackRow(
@@ -53,12 +55,6 @@ export function createTrackRow(
   }
   tdPoly.appendChild(polyGroup)
 
-  const tdTrigger = document.createElement('td')
-  tdTrigger.textContent = midiNoteName(triggerNoteForTrack(config.trackId))
-
-  const tdGroup = document.createElement('td')
-  tdGroup.textContent = `ch${groupChannel(config.trackId)}`
-
   const tdLatch = document.createElement('td')
   const latchCb = document.createElement('input')
   latchCb.type = 'checkbox'
@@ -81,6 +77,34 @@ export function createTrackRow(
   )
   tdRetrigger.appendChild(retrigCb)
 
+  const tdSustain = document.createElement('td')
+  const sustainCb = document.createElement('input')
+  sustainCb.type = 'checkbox'
+  sustainCb.className = 'sustain-cb'
+  sustainCb.checked = config.sustain
+  sustainCb.title = 'Hold DEC at 127 while notes are held; drop to RELEASE on note-off (ADSR S+R emulation)'
+  sustainCb.addEventListener('change', () =>
+    callbacks.onToggleSustain(config.trackId, sustainCb.checked)
+  )
+  tdSustain.appendChild(sustainCb)
+
+  const tdRelease = document.createElement('td')
+  const releaseInput = document.createElement('input')
+  releaseInput.type = 'number'
+  releaseInput.min = '0'
+  releaseInput.max = '127'
+  releaseInput.step = '1'
+  releaseInput.className = 'release-input'
+  releaseInput.value = String(config.release)
+  releaseInput.title = 'DEC value (0–127) sent when no notes are held'
+  // Commit on blur/enter (via 'change') so we don't spam MIDI on every keystroke.
+  releaseInput.addEventListener('change', () => {
+    const v = clampReleaseInput(releaseInput.value, config.release)
+    if (String(v) !== releaseInput.value) releaseInput.value = String(v)
+    callbacks.onChangeRelease(config.trackId, v)
+  })
+  tdRelease.appendChild(releaseInput)
+
   const tdLeds = document.createElement('td')
   const leds = document.createElement('span')
   leds.className = 'voice-leds'
@@ -94,10 +118,10 @@ export function createTrackRow(
   tr.appendChild(tdNum)
   tr.appendChild(tdEnabled)
   tr.appendChild(tdPoly)
-  tr.appendChild(tdTrigger)
-  tr.appendChild(tdGroup)
   tr.appendChild(tdLatch)
   tr.appendChild(tdRetrigger)
+  tr.appendChild(tdSustain)
+  tr.appendChild(tdRelease)
   tr.appendChild(tdLeds)
 
   updateTrackRow(tr, config, undefined)
@@ -112,7 +136,7 @@ export function updateTrackRow(
   tr.classList.toggle('disabled', !config.enabled)
 
   const cb = tr.querySelector<HTMLInputElement>(
-    'input[type="checkbox"]:not(.latch-cb):not(.retrig-cb)'
+    'input[type="checkbox"]:not(.latch-cb):not(.retrig-cb):not(.sustain-cb)'
   )!
   if (cb.checked !== config.enabled) cb.checked = config.enabled
 
@@ -121,6 +145,16 @@ export function updateTrackRow(
 
   const retrigCb = tr.querySelector<HTMLInputElement>('input.retrig-cb')!
   if (retrigCb.checked !== config.retrigger) retrigCb.checked = config.retrigger
+
+  const sustainCb = tr.querySelector<HTMLInputElement>('input.sustain-cb')!
+  if (sustainCb.checked !== config.sustain) sustainCb.checked = config.sustain
+
+  const releaseInput = tr.querySelector<HTMLInputElement>('input.release-input')!
+  const releaseStr = String(config.release)
+  // Skip overwrite while the user is actively editing — they may be mid-keystroke.
+  if (releaseInput.value !== releaseStr && document.activeElement !== releaseInput) {
+    releaseInput.value = releaseStr
+  }
 
   const polyButtons = tr.querySelectorAll<HTMLButtonElement>('.poly-group button')
   for (const b of polyButtons) {

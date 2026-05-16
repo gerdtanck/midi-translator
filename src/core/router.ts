@@ -12,10 +12,6 @@ export class Router {
   // Returns currently-enabled engines. Lets the app toggle tracks without re-constructing the router.
   constructor(private readonly getEngines: () => TrackEngine[]) {}
 
-  getSustain(): boolean {
-    return this.sustainDown
-  }
-
   onMidiMessage(bytes: Uint8Array): void {
     if (bytes.length < 2) return
     const status = bytes[0]!

@@ -1,6 +1,14 @@
 import type { TrackConfig } from './track-config'
-import { POLYPHONY_CHOICES, defaultTrackConfigs } from './track-config'
+import { DEFAULT_RELEASE, POLYPHONY_CHOICES, defaultTrackConfigs } from './track-config'
 import type { Polyphony } from '../core/voice-allocator'
+
+const clampCc = (v: unknown, fallback: number): number => {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return fallback
+  const n = Math.round(v)
+  if (n < 0) return 0
+  if (n > 127) return 127
+  return n
+}
 
 const STORAGE_KEY = 'md-midi-translator:settings:v1'
 
@@ -37,6 +45,8 @@ export function loadSettings(): PersistedSettings {
             polyphony: poly,
             latch: Boolean(p.latch),
             retrigger: Boolean(p.retrigger),
+            sustain: Boolean(p.sustain),
+            release: clampCc(p.release, DEFAULT_RELEASE),
           }
         })
       : base.tracks

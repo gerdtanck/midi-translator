@@ -45,24 +45,28 @@ PTCH1:   cc16
 PTCH2:   cc20
 PTCH3:   cc21
 PTCH4:   cc22
+DEC:     cc17
 
 Second machine
 PTCH1:   cc40
 PTCH2:   cc44
 PTCH3:   cc45
 PTCH4:   cc46
+DEC:     cc41
 
 Third machine
 PTCH1:   cc72
 PTCH2:   cc76
 PTCH3:   cc77
 PTCH4:   cc78
+DEC:     cc73
 
 Fourth machine
 PTCH1:   cc96
 PTCH2:   cc100
 PTCH3:   cc101
 PTCH4:   cc102
+DEC:     cc97
 
 ## Polyphonic machines TONAL mode
 

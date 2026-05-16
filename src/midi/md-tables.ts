@@ -15,6 +15,9 @@ export const PTCH_CC: readonly (readonly number[])[] = [
   [96, 100, 101, 102], // machine 3 — tracks 4, 8, 12, 16
 ]
 
+// DEC (decay) CC number per machine-in-group, indexed by machineIdx (trackId % 4).
+export const DEC_CC: readonly number[] = [17, 41, 73, 97]
+
 // MD output channel for a track's pitch CCs (1-based).
 // Tracks 1-4 → ch1, 5-8 → ch2, 9-12 → ch3, 13-16 → ch4.
 export const groupChannel = (trackId: number): number =>
@@ -35,4 +38,11 @@ export const triggerNoteForTrack = (trackId: number): number => {
   const n = TRIGGER_NOTES[trackId]
   if (n === undefined) throw new Error(`invalid trackId ${trackId}`)
   return n
+}
+
+// DEC CC number for a given track.
+export const decCcForTrack = (trackId: number): number => {
+  const cc = DEC_CC[machineIndex(trackId)]
+  if (cc === undefined) throw new Error(`invalid trackId ${trackId}`)
+  return cc
 }
