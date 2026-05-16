@@ -13,6 +13,8 @@ import {
   loadSettings,
   saveSettings,
 } from '../state/persistence'
+import { type PresetMap, loadPresets, savePresets } from '../state/presets'
+import type { TrackConfig } from '../state/track-config'
 import { createTrackRow, updateTrackRow } from './track-row'
 import { MidiLogView } from './midi-log'
 
@@ -31,6 +33,12 @@ export function mountUi(root: HTMLElement): void {
         <label>Output
           <select id="output"></select>
         </label>
+        <label>Preset
+          <select id="preset"></select>
+        </label>
+        <button id="presetSave" title="Overwrite the selected preset with the current configuration">Save</button>
+        <button id="presetSaveAs" title="Save the current configuration as a new preset">Save As…</button>
+        <button id="presetDelete" title="Delete the selected preset">Delete</button>
         <button id="panic" class="panic">Panic</button>
       </div>
       <div id="deviceWarn"></div>
@@ -39,9 +47,11 @@ export function mountUi(root: HTMLElement): void {
           <tr>
             <th>#</th>
             <th>On</th>
-            <th>Poly</th>
+            <th>Paraphony</th>
             <th title="Keep released slots at their last pitch instead of resetting to unison">Latch</th>
             <th title="Retrigger the MD trigger note on every new key press">Retrig</th>
+            <th title="Add this track to Polygroup A (true polyphony voice pool)">Poly-A</th>
+            <th title="Add this track to Polygroup B (true polyphony voice pool)">Poly-B</th>
             <th title="Hold DEC at 127 while notes are held; drop to RELEASE on note-off (ADSR S+R emulation)">Sustain</th>
             <th title="DEC value (0–127) sent when no notes are held">Release</th>
             <th>Voices</th>
@@ -74,6 +84,10 @@ export function mountUi(root: HTMLElement): void {
   const outputSel = root.querySelector<HTMLSelectElement>('#output')!
   const tbody = root.querySelector<HTMLTableSectionElement>('#tbody')!
   const panicBtn = root.querySelector<HTMLButtonElement>('#panic')!
+  const presetSel = root.querySelector<HTMLSelectElement>('#preset')!
+  const presetSaveBtn = root.querySelector<HTMLButtonElement>('#presetSave')!
+  const presetSaveAsBtn = root.querySelector<HTMLButtonElement>('#presetSaveAs')!
+  const presetDeleteBtn = root.querySelector<HTMLButtonElement>('#presetDelete')!
   const deviceWarn = root.querySelector<HTMLDivElement>('#deviceWarn')!
   const log = root.querySelector<HTMLDivElement>('#log')!
   const logInEl = root.querySelector<HTMLPreElement>('#logIn')!
@@ -93,6 +107,7 @@ export function mountUi(root: HTMLElement): void {
   }
 
   const settings: PersistedSettings = loadSettings()
+  const presets: PresetMap = loadPresets()
   const io = new MidiIO()
   const engines = new Map<number, TrackEngine>()
   const rows = new Map<number, HTMLTableRowElement>()
@@ -100,13 +115,24 @@ export function mountUi(root: HTMLElement): void {
   const persist = (): void => saveSettings(settings)
 
   // Engines are the single source of truth for voice state.
-  // The router reads the current set each message.
-  const router = new Router(() =>
-    settings.tracks
-      .filter((t) => t.enabled)
-      .map((t) => engines.get(t.trackId)!)
-      .filter(Boolean)
-  )
+  // The router reads the current routing snapshot each message.
+  const router = new Router(() => {
+    const enabled = settings.tracks.filter((t) => t.enabled)
+    const engineByTrackId = new Map<number, TrackEngine>()
+    for (const t of enabled) {
+      const e = engines.get(t.trackId)
+      if (e) engineByTrackId.set(t.trackId, e)
+    }
+    return {
+      engineByTrackId,
+      polygroupAMembers: enabled.filter((t) => t.polygroup === 'A').map((t) => t.trackId),
+      polygroupBMembers: enabled.filter((t) => t.polygroup === 'B').map((t) => t.trackId),
+      nonMembers: enabled
+        .filter((t) => t.polygroup === null)
+        .map((t) => engineByTrackId.get(t.trackId))
+        .filter((e): e is TrackEngine => e !== undefined),
+    }
+  })
 
   const ensureEngine = (trackId: number, poly: Polyphony): TrackEngine => {
     const cfg = settings.tracks[trackId]!
@@ -132,9 +158,44 @@ export function mountUi(root: HTMLElement): void {
   const removeEngine = (trackId: number): void => {
     const e = engines.get(trackId)
     if (e) {
+      router.forgetTrack(trackId)
       e.forceRelease()
       engines.delete(trackId)
     }
+  }
+
+  const renderPresetSelect = (): void => {
+    presetSel.innerHTML = ''
+    const placeholder = document.createElement('option')
+    placeholder.value = ''
+    placeholder.textContent = '— preset —'
+    presetSel.appendChild(placeholder)
+    for (const name of Object.keys(presets)) {
+      const o = document.createElement('option')
+      o.value = name
+      o.textContent = name
+      if (name === settings.lastPreset) o.selected = true
+      presetSel.appendChild(o)
+    }
+    const hasTarget = !!settings.lastPreset && settings.lastPreset in presets
+    presetSaveBtn.disabled = !hasTarget
+    presetDeleteBtn.disabled = !hasTarget
+  }
+
+  const cloneTracks = (tracks: TrackConfig[]): TrackConfig[] =>
+    tracks.map((t) => ({ ...t }))
+
+  const applyPreset = (tracks: TrackConfig[]): void => {
+    // Tear down all engines so any held voices and polygroup state clear cleanly.
+    for (const trackId of Array.from(engines.keys())) removeEngine(trackId)
+    router.reset()
+    for (let i = 0; i < settings.tracks.length; i++) {
+      settings.tracks[i] = { ...tracks[i]!, trackId: i }
+    }
+    for (const cfg of settings.tracks) {
+      if (cfg.enabled) ensureEngine(cfg.trackId, cfg.polyphony)
+    }
+    renderAllRows()
   }
 
   const renderRow = (trackId: number): void => {
@@ -188,6 +249,7 @@ export function mountUi(root: HTMLElement): void {
     for (let ch = 1; ch <= 4; ch++) io.sendCc(ch, CC_ALL_NOTES_OFF, 0)
     for (const n of TRIGGER_NOTES) io.sendNoteOff(MD_TRIGGER_CHANNEL, n)
     for (const e of engines.values()) e.forceRelease()
+    router.reset()
     renderAllRows()
     log.textContent = 'Panic sent.'
   }
@@ -278,12 +340,23 @@ export function mountUi(root: HTMLElement): void {
           persist()
           renderRow(trackId)
         },
+        onSetPolygroup: (trackId, value) => {
+          const c = settings.tracks[trackId]!
+          if (c.polygroup === value) return
+          // Dispatch any dangling polygroup voice on this track before changing membership,
+          // so we don't leak a stuck trigger note on the device.
+          router.forgetTrack(trackId)
+          c.polygroup = value
+          persist()
+          renderRow(trackId)
+        },
       })
       rows.set(cfg.trackId, tr)
       tbody.appendChild(tr)
       if (cfg.enabled) ensureEngine(cfg.trackId, cfg.polyphony)
     }
     renderAllRows()
+    renderPresetSelect()
 
     panel.hidden = false
     enableBtn.hidden = true
@@ -306,4 +379,58 @@ export function mountUi(root: HTMLElement): void {
     updateDeviceWarning()
   })
   panicBtn.addEventListener('click', panic)
+
+  presetSel.addEventListener('change', () => {
+    const name = presetSel.value
+    if (!name) {
+      settings.lastPreset = null
+      persist()
+      renderPresetSelect()
+      return
+    }
+    const preset = presets[name]
+    if (!preset) {
+      renderPresetSelect()
+      return
+    }
+    settings.lastPreset = name
+    applyPreset(preset)
+    persist()
+    renderPresetSelect()
+    log.textContent = `Loaded preset "${name}".`
+  })
+
+  presetSaveBtn.addEventListener('click', () => {
+    const name = settings.lastPreset
+    if (!name) return
+    presets[name] = cloneTracks(settings.tracks)
+    savePresets(presets)
+    log.textContent = `Saved preset "${name}".`
+  })
+
+  presetSaveAsBtn.addEventListener('click', () => {
+    const raw = window.prompt('Preset name:', settings.lastPreset ?? '')
+    if (raw === null) return
+    const name = raw.trim()
+    if (!name) return
+    if (name in presets && !window.confirm(`Overwrite existing preset "${name}"?`)) return
+    presets[name] = cloneTracks(settings.tracks)
+    savePresets(presets)
+    settings.lastPreset = name
+    persist()
+    renderPresetSelect()
+    log.textContent = `Saved preset "${name}".`
+  })
+
+  presetDeleteBtn.addEventListener('click', () => {
+    const name = settings.lastPreset
+    if (!name || !(name in presets)) return
+    if (!window.confirm(`Delete preset "${name}"?`)) return
+    delete presets[name]
+    savePresets(presets)
+    settings.lastPreset = null
+    persist()
+    renderPresetSelect()
+    log.textContent = `Deleted preset "${name}".`
+  })
 }

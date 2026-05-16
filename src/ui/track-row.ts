@@ -1,4 +1,4 @@
-import type { TrackConfig } from '../state/track-config'
+import type { Polygroup, TrackConfig } from '../state/track-config'
 import { POLYPHONY_CHOICES } from '../state/track-config'
 import type { TrackEngine } from '../core/track-engine'
 import type { Polyphony } from '../core/voice-allocator'
@@ -19,6 +19,7 @@ export interface TrackRowCallbacks {
   onToggleRetrigger: (trackId: number, retrigger: boolean) => void
   onToggleSustain: (trackId: number, sustain: boolean) => void
   onChangeRelease: (trackId: number, release: number) => void
+  onSetPolygroup: (trackId: number, value: Polygroup) => void
 }
 
 export function createTrackRow(
@@ -77,6 +78,28 @@ export function createTrackRow(
   )
   tdRetrigger.appendChild(retrigCb)
 
+  const tdPgA = document.createElement('td')
+  const pgACb = document.createElement('input')
+  pgACb.type = 'checkbox'
+  pgACb.className = 'pg-a-cb'
+  pgACb.checked = config.polygroup === 'A'
+  pgACb.title = 'Add this track to Polygroup A — each key press is dynamically allocated to one of A\'s tracks for true polyphony'
+  pgACb.addEventListener('change', () =>
+    callbacks.onSetPolygroup(config.trackId, pgACb.checked ? 'A' : null)
+  )
+  tdPgA.appendChild(pgACb)
+
+  const tdPgB = document.createElement('td')
+  const pgBCb = document.createElement('input')
+  pgBCb.type = 'checkbox'
+  pgBCb.className = 'pg-b-cb'
+  pgBCb.checked = config.polygroup === 'B'
+  pgBCb.title = 'Add this track to Polygroup B — each key press is dynamically allocated to one of B\'s tracks for true polyphony'
+  pgBCb.addEventListener('change', () =>
+    callbacks.onSetPolygroup(config.trackId, pgBCb.checked ? 'B' : null)
+  )
+  tdPgB.appendChild(pgBCb)
+
   const tdSustain = document.createElement('td')
   const sustainCb = document.createElement('input')
   sustainCb.type = 'checkbox'
@@ -120,6 +143,8 @@ export function createTrackRow(
   tr.appendChild(tdPoly)
   tr.appendChild(tdLatch)
   tr.appendChild(tdRetrigger)
+  tr.appendChild(tdPgA)
+  tr.appendChild(tdPgB)
   tr.appendChild(tdSustain)
   tr.appendChild(tdRelease)
   tr.appendChild(tdLeds)
@@ -136,7 +161,7 @@ export function updateTrackRow(
   tr.classList.toggle('disabled', !config.enabled)
 
   const cb = tr.querySelector<HTMLInputElement>(
-    'input[type="checkbox"]:not(.latch-cb):not(.retrig-cb):not(.sustain-cb)'
+    'input[type="checkbox"]:not(.latch-cb):not(.retrig-cb):not(.sustain-cb):not(.pg-a-cb):not(.pg-b-cb)'
   )!
   if (cb.checked !== config.enabled) cb.checked = config.enabled
 
@@ -148,6 +173,14 @@ export function updateTrackRow(
 
   const sustainCb = tr.querySelector<HTMLInputElement>('input.sustain-cb')!
   if (sustainCb.checked !== config.sustain) sustainCb.checked = config.sustain
+
+  const pgACb = tr.querySelector<HTMLInputElement>('input.pg-a-cb')!
+  const pgAExpected = config.polygroup === 'A'
+  if (pgACb.checked !== pgAExpected) pgACb.checked = pgAExpected
+
+  const pgBCb = tr.querySelector<HTMLInputElement>('input.pg-b-cb')!
+  const pgBExpected = config.polygroup === 'B'
+  if (pgBCb.checked !== pgBExpected) pgBCb.checked = pgBExpected
 
   const releaseInput = tr.querySelector<HTMLInputElement>('input.release-input')!
   const releaseStr = String(config.release)

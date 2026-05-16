@@ -1,5 +1,7 @@
 import type { Polyphony } from '../core/voice-allocator'
 
+export type Polygroup = 'A' | 'B' | null
+
 export interface TrackConfig {
   trackId: number
   enabled: boolean
@@ -12,6 +14,8 @@ export interface TrackConfig {
   sustain: boolean
   // DEC value (0..127) sent when sustain is on and no voices are held.
   release: number
+  // Membership in a polygroup voice pool. Per-track Poly is ignored when set.
+  polygroup: Polygroup
 }
 
 export const DEFAULT_RELEASE = 63
@@ -25,6 +29,7 @@ export const defaultTrackConfigs = (): TrackConfig[] =>
     retrigger: false,
     sustain: false,
     release: DEFAULT_RELEASE,
+    polygroup: null,
   }))
 
 export const POLYPHONY_CHOICES: readonly Polyphony[] = [1, 3, 4]

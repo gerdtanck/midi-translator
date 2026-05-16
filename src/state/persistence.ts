@@ -16,13 +16,39 @@ export interface PersistedSettings {
   inputId: string | null
   outputId: string | null
   tracks: TrackConfig[]
+  lastPreset: string | null
 }
 
 export const defaultSettings = (): PersistedSettings => ({
   inputId: null,
   outputId: null,
   tracks: defaultTrackConfigs(),
+  lastPreset: null,
 })
+
+// Validate/clamp a possibly-malformed array of per-track entries into a fully-typed
+// TrackConfig[]. Used both by loadSettings and by preset loading.
+export const hydrateTracks = (raw: unknown): TrackConfig[] => {
+  const base = defaultTrackConfigs()
+  if (!Array.isArray(raw)) return base
+  return base.map((t, i) => {
+    const p = raw[i] as Partial<TrackConfig> | undefined
+    if (!p || typeof p !== 'object') return t
+    const poly = (POLYPHONY_CHOICES as readonly number[]).includes(p.polyphony as number)
+      ? (p.polyphony as Polyphony)
+      : t.polyphony
+    return {
+      trackId: i,
+      enabled: Boolean(p.enabled),
+      polyphony: poly,
+      latch: Boolean(p.latch),
+      retrigger: Boolean(p.retrigger),
+      sustain: Boolean(p.sustain),
+      release: clampCc(p.release, DEFAULT_RELEASE),
+      polygroup: p.polygroup === 'A' || p.polygroup === 'B' ? p.polygroup : null,
+    }
+  })
+}
 
 export function loadSettings(): PersistedSettings {
   try {
@@ -31,29 +57,11 @@ export function loadSettings(): PersistedSettings {
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== 'object') return defaultSettings()
     const s = parsed as Partial<PersistedSettings>
-    const base = defaultSettings()
-    const tracks = Array.isArray(s.tracks)
-      ? base.tracks.map((t, i) => {
-          const p = s.tracks?.[i]
-          if (!p) return t
-          const poly = (POLYPHONY_CHOICES as readonly number[]).includes(p.polyphony)
-            ? (p.polyphony as Polyphony)
-            : t.polyphony
-          return {
-            trackId: i,
-            enabled: Boolean(p.enabled),
-            polyphony: poly,
-            latch: Boolean(p.latch),
-            retrigger: Boolean(p.retrigger),
-            sustain: Boolean(p.sustain),
-            release: clampCc(p.release, DEFAULT_RELEASE),
-          }
-        })
-      : base.tracks
     return {
       inputId: typeof s.inputId === 'string' ? s.inputId : null,
       outputId: typeof s.outputId === 'string' ? s.outputId : null,
-      tracks,
+      tracks: hydrateTracks(s.tracks),
+      lastPreset: typeof s.lastPreset === 'string' ? s.lastPreset : null,
     }
   } catch {
     return defaultSettings()
