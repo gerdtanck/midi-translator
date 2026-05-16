@@ -15,13 +15,27 @@ const STORAGE_KEY = 'md-midi-translator:settings:v1'
 export interface PersistedSettings {
   inputId: string | null
   outputId: string | null
+  // 0..15 — MIDI channel the router accepts input on (0 == ch1).
+  inputChannel: number
+  // When true, all incoming NoteOn velocities are forced to 127.
+  fixedVelocity: boolean
   tracks: TrackConfig[]
   lastPreset: string | null
+}
+
+const clampChannel = (v: unknown): number => {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return 0
+  const n = Math.round(v)
+  if (n < 0) return 0
+  if (n > 15) return 15
+  return n
 }
 
 export const defaultSettings = (): PersistedSettings => ({
   inputId: null,
   outputId: null,
+  inputChannel: 0,
+  fixedVelocity: false,
   tracks: defaultTrackConfigs(),
   lastPreset: null,
 })
@@ -60,6 +74,8 @@ export function loadSettings(): PersistedSettings {
     return {
       inputId: typeof s.inputId === 'string' ? s.inputId : null,
       outputId: typeof s.outputId === 'string' ? s.outputId : null,
+      inputChannel: clampChannel(s.inputChannel),
+      fixedVelocity: Boolean(s.fixedVelocity),
       tracks: hydrateTracks(s.tracks),
       lastPreset: typeof s.lastPreset === 'string' ? s.lastPreset : null,
     }

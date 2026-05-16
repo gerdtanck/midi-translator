@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { Router, type RoutingSnapshot } from './router'
 import { TrackEngine, type MidiSink } from './track-engine'
+import type { PolygroupMember } from './polygroup-allocator'
+
+const m1 = (...trackIds: number[]): PolygroupMember[] =>
+  trackIds.map((trackId) => ({ trackId, capacity: 1 }))
+const mCap = (...pairs: [number, number][]): PolygroupMember[] =>
+  pairs.map(([trackId, capacity]) => ({ trackId, capacity }))
 
 type Message =
   | { kind: 'noteOn'; ch: number; note: number; vel: number }
@@ -31,7 +37,11 @@ const cc = (ch: number, n: number, v: number) =>
   new Uint8Array([0xb0 | (ch - 1), n, v])
 
 // All-non-member routing snapshot: every engine receives every press (current behavior).
-const nonMemberRouting = (engines: TrackEngine[]): RoutingSnapshot => {
+const nonMemberRouting = (
+  engines: TrackEngine[],
+  inputChannel = 0,
+  fixedVelocity = false,
+): RoutingSnapshot => {
   const engineByTrackId = new Map<number, TrackEngine>()
   for (const e of engines) engineByTrackId.set(e.trackId, e)
   return {
@@ -39,6 +49,8 @@ const nonMemberRouting = (engines: TrackEngine[]): RoutingSnapshot => {
     polygroupAMembers: [],
     polygroupBMembers: [],
     nonMembers: engines,
+    inputChannel,
+    fixedVelocity,
   }
 }
 
@@ -179,6 +191,31 @@ describe('Router + TrackEngine integration', () => {
     for (const pos of ccPositions) expect(pos).toBeLessThan(noteOnIdx)
   })
 
+  it('fixedVelocity forces incoming NoteOn velocity to 127', () => {
+    const sink = new TestSink()
+    const engine = new TrackEngine(0, 1, sink)
+    const router = new Router(() => nonMemberRouting([engine], 0, true))
+
+    router.onMidiMessage(noteOn(1, 60, 40)) // soft press
+    const noteOns = sink.messages.filter((m) => m.kind === 'noteOn')
+    expect(noteOns).toEqual([{ kind: 'noteOn', ch: 1, note: 36, vel: 127 }])
+  })
+
+  it('ignores messages on channels other than the configured inputChannel', () => {
+    const sink = new TestSink()
+    const engine = new TrackEngine(0, 1, sink)
+    const router = new Router(() => nonMemberRouting([engine], 2)) // accept ch3 only
+
+    router.onMidiMessage(noteOn(1, 60, 100)) // ch1 — ignored
+    expect(sink.messages).toEqual([])
+
+    router.onMidiMessage(noteOn(3, 60, 100)) // ch3 — accepted
+    expect(sink.messages).toEqual([
+      { kind: 'cc', ch: 1, cc: 16, value: 70 },
+      { kind: 'noteOn', ch: 1, note: 36, vel: 100 },
+    ])
+  })
+
   it('sustain pedal defers voice release until pedal up', () => {
     const sink = new TestSink()
     const engine = new TrackEngine(0, 1, sink)
@@ -212,9 +249,11 @@ describe('Router polygroup dispatch', () => {
     ])
     const router = new Router(() => ({
       engineByTrackId,
-      polygroupAMembers: [0, 1, 2],
+      polygroupAMembers: m1(0, 1, 2),
       polygroupBMembers: [],
       nonMembers: [],
+      inputChannel: 0,
+      fixedVelocity: false,
     }))
     return { sink, e0, e1, e2, router }
   }
@@ -283,9 +322,11 @@ describe('Router polygroup dispatch', () => {
     ])
     const router = new Router(() => ({
       engineByTrackId,
-      polygroupAMembers: [0],
-      polygroupBMembers: [4],
+      polygroupAMembers: m1(0),
+      polygroupBMembers: m1(4),
       nonMembers: [eN],
+      inputChannel: 0,
+      fixedVelocity: false,
     }))
 
     router.onMidiMessage(noteOn(1, 60, 100))
@@ -327,5 +368,118 @@ describe('Router polygroup dispatch', () => {
     expect(sink.messages.filter((m) => m.kind === 'noteOff')).toEqual([
       { kind: 'noteOff', ch: 1, note: 38 },
     ])
+  })
+})
+
+describe('Router polygroup paraphony-aware allocation', () => {
+  // Two members with paraphony=4. First four presses fill t0; next four fill t1.
+  const setup2x4A = () => {
+    const sink = new TestSink()
+    const e0 = new TrackEngine(0, 4, sink)
+    const e1 = new TrackEngine(1, 4, sink)
+    const engineByTrackId = new Map([
+      [0, e0],
+      [1, e1],
+    ])
+    const router = new Router(() => ({
+      engineByTrackId,
+      polygroupAMembers: mCap([0, 4], [1, 4]),
+      polygroupBMembers: [],
+      nonMembers: [],
+      inputChannel: 0,
+      fixedVelocity: false,
+    }))
+    return { sink, e0, e1, router }
+  }
+
+  it('fills sticky track to capacity before advancing', () => {
+    const { sink, router } = setup2x4A()
+    router.onMidiMessage(noteOn(1, 60, 100)) // → t0 (1/4)
+    router.onMidiMessage(noteOn(1, 64, 100)) // → t0 (2/4)
+    router.onMidiMessage(noteOn(1, 67, 100)) // → t0 (3/4)
+    router.onMidiMessage(noteOn(1, 72, 100)) // → t0 (4/4)
+    // Only one MD trigger NoteOn on t0 (note 36) — subsequent within-track presses don't retrigger.
+    const noteOnsAfter4 = sink.messages.filter((m) => m.kind === 'noteOn')
+    expect(noteOnsAfter4).toEqual([{ kind: 'noteOn', ch: 1, note: 36, vel: 100 }])
+
+    router.onMidiMessage(noteOn(1, 76, 100)) // → t1 (1/4)
+    const noteOnsAfter5 = sink.messages.filter((m) => m.kind === 'noteOn')
+    // Now we should see the second MD trigger NoteOn — on t1 (trigger note 38).
+    expect(noteOnsAfter5).toEqual([
+      { kind: 'noteOn', ch: 1, note: 36, vel: 100 },
+      { kind: 'noteOn', ch: 1, note: 38, vel: 100 },
+    ])
+  })
+
+  it('multi-voice fill emits PTCH1 absolute + PTCH2..N relative on the sticky track', () => {
+    const { sink, router } = setup2x4A()
+    router.onMidiMessage(noteOn(1, 60, 100)) // C4 → PTCH1 abs = 70 on cc16
+    router.onMidiMessage(noteOn(1, 64, 100)) // E4 → PTCH2 rel on cc20
+    router.onMidiMessage(noteOn(1, 67, 100)) // G4 → PTCH3 rel on cc21
+    const ccs = sink.messages.filter((m) => m.kind === 'cc')
+    // All on group ch1 (track 0 is in group 1).
+    expect(ccs).toContainEqual({ kind: 'cc', ch: 1, cc: 16, value: 70 })
+    expect(ccs).toContainEqual({ kind: 'cc', ch: 1, cc: 20, value: 72 })
+    expect(ccs).toContainEqual({ kind: 'cc', ch: 1, cc: 21, value: 78 })
+  })
+
+  it('steal across the polygroup with paraphony>1 is a CC-only swap (no trigger NoteOff/NoteOn)', () => {
+    const { sink, router } = setup2x4A()
+    // Fill t0 with 4 voices, then t1 with 4 voices.
+    for (const n of [60, 62, 64, 67]) router.onMidiMessage(noteOn(1, n, 100))
+    for (const n of [70, 72, 74, 76]) router.onMidiMessage(noteOn(1, n, 100))
+    sink.reset()
+
+    router.onMidiMessage(noteOn(1, 80, 110)) // 9th press — steals oldest (60 on t0)
+
+    // Engine on t0 went 4→3 (after release of stolen voice) → 4 (new voice). Voice count never
+    // reached zero, so no MD trigger NoteOff or NoteOn is emitted — only CC updates on group ch1.
+    expect(sink.messages.filter((m) => m.kind === 'noteOff')).toEqual([])
+    expect(sink.messages.filter((m) => m.kind === 'noteOn')).toEqual([])
+    // CCs landed on group ch1 (track 0's group), not ch2 (track 1's group).
+    const ccs = sink.messages.filter((m) => m.kind === 'cc')
+    expect(ccs.length).toBeGreaterThan(0)
+    for (const c of ccs) expect(c.kind === 'cc' && c.ch).toBe(1)
+  })
+
+  it('steal across the polygroup with paraphony=1 retriggers the displaced track', () => {
+    const sink = new TestSink()
+    const e0 = new TrackEngine(0, 1, sink)
+    const e1 = new TrackEngine(1, 1, sink)
+    const engineByTrackId = new Map([
+      [0, e0],
+      [1, e1],
+    ])
+    const router = new Router(() => ({
+      engineByTrackId,
+      polygroupAMembers: m1(0, 1),
+      polygroupBMembers: [],
+      nonMembers: [],
+      inputChannel: 0,
+      fixedVelocity: false,
+    }))
+
+    router.onMidiMessage(noteOn(1, 60, 100)) // → t0
+    router.onMidiMessage(noteOn(1, 64, 100)) // → t1
+    sink.reset()
+    router.onMidiMessage(noteOn(1, 67, 110)) // 3rd press — steals t0 (oldest)
+    // t0 went 1→0 (release) → 1 (new). Visible: NoteOff(36), CC, NoteOn(36, vel=110).
+    expect(sink.messages).toEqual([
+      { kind: 'noteOff', ch: 1, note: 36 },
+      { kind: 'cc', ch: 1, cc: 16, value: 84 }, // PTCH1 abs for G4=67 → 84
+      { kind: 'noteOn', ch: 1, note: 36, vel: 110 },
+    ])
+  })
+
+  it('forgetTrack on a polygrouped track flushes every voice it holds', () => {
+    const { sink, router } = setup2x4A()
+    for (const n of [60, 62, 64, 67]) router.onMidiMessage(noteOn(1, n, 100)) // 4 voices on t0
+    sink.reset()
+
+    router.forgetTrack(0)
+    // Engine releases all four voices through its own allocator. The MD trigger NoteOff fires
+    // exactly once when the last voice goes away.
+    const noteOffs = sink.messages.filter((m) => m.kind === 'noteOff')
+    expect(noteOffs).toEqual([{ kind: 'noteOff', ch: 1, note: 36 }])
   })
 })

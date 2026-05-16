@@ -46,6 +46,7 @@ h1 {
 }
 
 .bar label { font-size: 13px; color: var(--muted); }
+.bar label.checkbox { display: inline-flex; align-items: center; gap: 6px; }
 .bar select {
   margin-left: 8px;
   background: var(--bg);

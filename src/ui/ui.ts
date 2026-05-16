@@ -30,6 +30,13 @@ export function mountUi(root: HTMLElement): void {
         <label>Input
           <select id="input"></select>
         </label>
+        <label>Channel
+          <select id="inputChannel" title="MIDI channel the translator listens on"></select>
+        </label>
+        <label class="checkbox" title="Force all incoming NoteOn velocities to 127">
+          <input type="checkbox" id="fixedVelocity" />
+          Fixed Vel.
+        </label>
         <label>Output
           <select id="output"></select>
         </label>
@@ -81,6 +88,8 @@ export function mountUi(root: HTMLElement): void {
   const bootError = root.querySelector<HTMLDivElement>('#bootError')!
   const panel = root.querySelector<HTMLDivElement>('#panel')!
   const inputSel = root.querySelector<HTMLSelectElement>('#input')!
+  const inputChannelSel = root.querySelector<HTMLSelectElement>('#inputChannel')!
+  const fixedVelocityChk = root.querySelector<HTMLInputElement>('#fixedVelocity')!
   const outputSel = root.querySelector<HTMLSelectElement>('#output')!
   const tbody = root.querySelector<HTMLTableSectionElement>('#tbody')!
   const panicBtn = root.querySelector<HTMLButtonElement>('#panic')!
@@ -125,14 +134,29 @@ export function mountUi(root: HTMLElement): void {
     }
     return {
       engineByTrackId,
-      polygroupAMembers: enabled.filter((t) => t.polygroup === 'A').map((t) => t.trackId),
-      polygroupBMembers: enabled.filter((t) => t.polygroup === 'B').map((t) => t.trackId),
+      polygroupAMembers: enabled
+        .filter((t) => t.polygroup === 'A')
+        .map((t) => ({ trackId: t.trackId, capacity: t.polyphony })),
+      polygroupBMembers: enabled
+        .filter((t) => t.polygroup === 'B')
+        .map((t) => ({ trackId: t.trackId, capacity: t.polyphony })),
       nonMembers: enabled
         .filter((t) => t.polygroup === null)
         .map((t) => engineByTrackId.get(t.trackId))
         .filter((e): e is TrackEngine => e !== undefined),
+      inputChannel: settings.inputChannel,
+      fixedVelocity: settings.fixedVelocity,
     }
   })
+
+  for (let ch = 0; ch < 16; ch++) {
+    const o = document.createElement('option')
+    o.value = String(ch)
+    o.textContent = String(ch + 1)
+    inputChannelSel.appendChild(o)
+  }
+  inputChannelSel.value = String(settings.inputChannel)
+  fixedVelocityChk.checked = settings.fixedVelocity
 
   const ensureEngine = (trackId: number, poly: Polyphony): TrackEngine => {
     const cfg = settings.tracks[trackId]!
@@ -303,6 +327,10 @@ export function mountUi(root: HTMLElement): void {
         onChangePolyphony: (trackId, poly) => {
           const c = settings.tracks[trackId]!
           if (c.polyphony === poly) return
+          // If the track is in a polygroup, flush its polygroup voices first — ensureEngine
+          // rebuilds the engine when polyphony changes (forceRelease + new TrackEngine), which
+          // would otherwise leave stale references in the polygroup allocator.
+          if (c.polygroup !== null) router.forgetTrack(trackId)
           c.polyphony = poly
           if (c.enabled) ensureEngine(trackId, poly)
           persist()
@@ -368,6 +396,19 @@ export function mountUi(root: HTMLElement): void {
     settings.inputId = id
     persist()
     updateDeviceWarning()
+  })
+  inputChannelSel.addEventListener('change', () => {
+    const ch = Number(inputChannelSel.value)
+    if (!Number.isFinite(ch) || ch < 0 || ch > 15 || ch === settings.inputChannel) return
+    // Flush voices held under the previous channel — otherwise their key-ups will arrive on the
+    // old channel and be ignored, leaving notes stuck in engine state.
+    panic()
+    settings.inputChannel = ch
+    persist()
+  })
+  fixedVelocityChk.addEventListener('change', () => {
+    settings.fixedVelocity = fixedVelocityChk.checked
+    persist()
   })
   outputSel.addEventListener('change', () => {
     const id = outputSel.value || null

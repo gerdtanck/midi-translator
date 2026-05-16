@@ -14,7 +14,8 @@ export interface TrackConfig {
   sustain: boolean
   // DEC value (0..127) sent when sustain is on and no voices are held.
   release: number
-  // Membership in a polygroup voice pool. Per-track Poly is ignored when set.
+  // Membership in a polygroup voice pool. When set, `polyphony` becomes the per-track voice
+  // capacity inside the polygroup (e.g. polyphony=4 → up to 4 voices on this track).
   polygroup: Polygroup
 }
 
