@@ -19,6 +19,9 @@ export interface PersistedSettings {
   inputChannel: number
   // When true, all incoming NoteOn velocities are forced to 127.
   fixedVelocity: boolean
+  // When true, unused paraphonic sub-voice slots are reset to unison (raw 64).
+  // When false, unused slots are sent raw 0 — disables the voice on the device.
+  unisonUnused: boolean
   tracks: TrackConfig[]
   lastPreset: string | null
 }
@@ -36,6 +39,7 @@ export const defaultSettings = (): PersistedSettings => ({
   outputId: null,
   inputChannel: 0,
   fixedVelocity: false,
+  unisonUnused: true,
   tracks: defaultTrackConfigs(),
   lastPreset: null,
 })
@@ -76,6 +80,7 @@ export function loadSettings(): PersistedSettings {
       outputId: typeof s.outputId === 'string' ? s.outputId : null,
       inputChannel: clampChannel(s.inputChannel),
       fixedVelocity: Boolean(s.fixedVelocity),
+      unisonUnused: typeof s.unisonUnused === 'boolean' ? s.unisonUnused : true,
       tracks: hydrateTracks(s.tracks),
       lastPreset: typeof s.lastPreset === 'string' ? s.lastPreset : null,
     }

@@ -37,6 +37,10 @@ export function mountUi(root: HTMLElement): void {
           <input type="checkbox" id="fixedVelocity" />
           Fixed Vel.
         </label>
+        <label class="checkbox" title="On: unused paraphonic slots play in unison (default). Off: unused slots are disabled (silent), so per-voice gain doesn't add up.">
+          <input type="checkbox" id="unisonUnused" />
+          Unison
+        </label>
         <label>Output
           <select id="output"></select>
         </label>
@@ -90,6 +94,7 @@ export function mountUi(root: HTMLElement): void {
   const inputSel = root.querySelector<HTMLSelectElement>('#input')!
   const inputChannelSel = root.querySelector<HTMLSelectElement>('#inputChannel')!
   const fixedVelocityChk = root.querySelector<HTMLInputElement>('#fixedVelocity')!
+  const unisonUnusedChk = root.querySelector<HTMLInputElement>('#unisonUnused')!
   const outputSel = root.querySelector<HTMLSelectElement>('#output')!
   const tbody = root.querySelector<HTMLTableSectionElement>('#tbody')!
   const panicBtn = root.querySelector<HTMLButtonElement>('#panic')!
@@ -157,6 +162,7 @@ export function mountUi(root: HTMLElement): void {
   }
   inputChannelSel.value = String(settings.inputChannel)
   fixedVelocityChk.checked = settings.fixedVelocity
+  unisonUnusedChk.checked = settings.unisonUnused
 
   const ensureEngine = (trackId: number, poly: Polyphony): TrackEngine => {
     const cfg = settings.tracks[trackId]!
@@ -166,6 +172,7 @@ export function mountUi(root: HTMLElement): void {
       existing.retrigger = cfg.retrigger
       existing.sustain = cfg.sustain
       existing.release = cfg.release
+      existing.unisonUnused = settings.unisonUnused
       return existing
     }
     existing?.forceRelease()
@@ -175,6 +182,7 @@ export function mountUi(root: HTMLElement): void {
     // Assign sustain fields directly (not via setSustain) so engine creation does not emit MIDI.
     e.sustain = cfg.sustain
     e.release = cfg.release
+    e.unisonUnused = settings.unisonUnused
     engines.set(trackId, e)
     return e
   }
@@ -194,7 +202,8 @@ export function mountUi(root: HTMLElement): void {
     placeholder.value = ''
     placeholder.textContent = '— preset —'
     presetSel.appendChild(placeholder)
-    for (const name of Object.keys(presets)) {
+    const names = Object.keys(presets).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    for (const name of names) {
       const o = document.createElement('option')
       o.value = name
       o.textContent = name
@@ -408,6 +417,12 @@ export function mountUi(root: HTMLElement): void {
   })
   fixedVelocityChk.addEventListener('change', () => {
     settings.fixedVelocity = fixedVelocityChk.checked
+    persist()
+  })
+  unisonUnusedChk.addEventListener('change', () => {
+    settings.unisonUnused = unisonUnusedChk.checked
+    // Push to every live engine so currently-held voices flip immediately on the device.
+    for (const e of engines.values()) e.setUnisonUnused(settings.unisonUnused)
     persist()
   })
   outputSel.addEventListener('change', () => {

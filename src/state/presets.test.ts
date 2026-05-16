@@ -26,16 +26,27 @@ beforeEach(() => {
   ;(globalThis as unknown as { localStorage: MemoryStorage }).localStorage = new MemoryStorage()
 })
 
-const BUILT_IN_KEYS = ['Poly 8 Layer 2', 'Poly 16', 'Init', 'Para 4']
+const BUILT_IN_KEYS = [
+  'Init',
+  'Mono 1',
+  'Mono 4',
+  'Poly 4 x 1',
+  'Poly 8 x 1',
+  'Poly 16 x 1',
+  'Poly 8 x 2',
+  'Para 3 x 4',
+  'Para 4 x 4',
+  'Para 4 x 16',
+]
 
 describe('presets persistence', () => {
   it('loadPresets returns built-in presets when storage is empty', () => {
     expect(Object.keys(loadPresets())).toEqual(BUILT_IN_KEYS)
   })
 
-  it('built-in Poly 16 has all 16 tracks in polygroup A with sustain on', () => {
+  it('built-in Poly 16 x 1 has all 16 tracks in polygroup A with sustain on', () => {
     const loaded = loadPresets()
-    const tracks = loaded['Poly 16']!
+    const tracks = loaded['Poly 16 x 1']!
     expect(tracks).toHaveLength(16)
     for (const t of tracks) {
       expect(t.enabled).toBe(true)

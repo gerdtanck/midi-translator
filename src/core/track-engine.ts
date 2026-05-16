@@ -32,6 +32,9 @@ export class TrackEngine {
   latch = false
   // When true, every new key press re-fires the trigger note (NoteOff + NoteOn) so the MD voice restarts.
   retrigger = false
+  // When true, unused paraphonic sub-voice slots emit raw 64 (unison with PTCH1).
+  // When false, they emit raw 0 — disables the voice on the device, so per-voice gain doesn't add up.
+  unisonUnused = true
   // When true, DEC is held at 127 while any voice is held and sent as `release` when all are released.
   sustain = false
   // DEC value (0..127) sent on last-released (or live edits) when sustain is on.
@@ -83,6 +86,14 @@ export class TrackEngine {
     } else {
       this.emitDec(this.release)
     }
+  }
+
+  // Flip the unused-slot mode. While voices are held, re-emit so the change is audible immediately.
+  // emitCcs(false) skips unused slots when latch is on — that's the correct behavior here too.
+  setUnisonUnused(value: boolean): void {
+    if (this.unisonUnused === value) return
+    this.unisonUnused = value
+    if (this.allocator.voices.length > 0) this.emitCcs(false)
   }
 
   // Update the release value. If sustain is on and no voices are held, push the new value to the
@@ -157,7 +168,8 @@ export class TrackEngine {
       } else if (this.latch && !firstPress) {
         continue // mid-chord release with latch on — keep last-sent value
       } else {
-        value = REL_CC_UNISON // unison with PTCH1
+        // Unison (raw 64) keeps the slot at the anchor pitch; disabled (raw 0) silences the voice.
+        value = this.unisonUnused ? REL_CC_UNISON : 0
       }
       if (this.lastSentCc.get(cc) !== value) {
         this.sink.sendCc(this.groupCh, cc, value)

@@ -197,3 +197,65 @@ describe('TrackEngine sustain', () => {
     expect(decCcs(sink, DEC_CC)).toEqual([])
   })
 })
+
+describe('TrackEngine unisonUnused', () => {
+  // Track 0, polyphony 3 → PTCH1=cc16, PTCH2=cc20, PTCH3=cc21, on group ch=1.
+  it('default (unisonUnused=true): unused slots emit raw 64 on a 1-voice press', () => {
+    const sink = new TestSink()
+    const engine = new TrackEngine(0, 3, sink)
+    press(engine, 60) // C4 only — slots 1 and 2 are unused
+    const ptch = ccs(sink).filter((m) => m.cc === 20 || m.cc === 21)
+    expect(ptch).toEqual([
+      { kind: 'cc', ch: 1, cc: 20, value: 64 },
+      { kind: 'cc', ch: 1, cc: 21, value: 64 },
+    ])
+  })
+
+  it('unisonUnused=false: unused slots emit raw 0 on a 1-voice press', () => {
+    const sink = new TestSink()
+    const engine = new TrackEngine(0, 3, sink)
+    engine.unisonUnused = false
+    press(engine, 60)
+    const ptch = ccs(sink).filter((m) => m.cc === 20 || m.cc === 21)
+    expect(ptch).toEqual([
+      { kind: 'cc', ch: 1, cc: 20, value: 0 },
+      { kind: 'cc', ch: 1, cc: 21, value: 0 },
+    ])
+  })
+
+  it('setUnisonUnused while voices are held re-emits unused slots immediately', () => {
+    const sink = new TestSink()
+    const engine = new TrackEngine(0, 3, sink)
+    press(engine, 60) // emits PTCH2=64, PTCH3=64
+    sink.reset()
+
+    engine.setUnisonUnused(false)
+    const ptch = ccs(sink).filter((m) => m.cc === 20 || m.cc === 21)
+    expect(ptch).toEqual([
+      { kind: 'cc', ch: 1, cc: 20, value: 0 },
+      { kind: 'cc', ch: 1, cc: 21, value: 0 },
+    ])
+  })
+
+  it('setUnisonUnused while idle emits nothing', () => {
+    const sink = new TestSink()
+    const engine = new TrackEngine(0, 3, sink)
+    engine.setUnisonUnused(false)
+    expect(sink.messages).toEqual([])
+  })
+
+  it('unisonUnused=false is a no-op for fully-used slots (PTCH1 and PTCH2 carry real pitches)', () => {
+    const sink = new TestSink()
+    const engine = new TrackEngine(0, 3, sink)
+    engine.unisonUnused = false
+    press(engine, 60) // C4
+    press(engine, 64) // E4 — slot 2 still unused
+    press(engine, 67) // G4 — all 3 slots used; no unused-slot writes at all
+    sink.reset()
+
+    // Now release the anchor — slot 2 becomes unused after migration.
+    releaseKey(engine, 60)
+    const ptch21 = ccs(sink).filter((m) => m.cc === 21)
+    expect(ptch21).toEqual([{ kind: 'cc', ch: 1, cc: 21, value: 0 }])
+  })
+})
